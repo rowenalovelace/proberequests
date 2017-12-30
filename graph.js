@@ -83,7 +83,7 @@ function handleJSON(json) {
     var ssid = ssids[request.name];
     if (!ssid) {
       added++;
-      console.log('adding ssid', request.name);
+      //console.log('adding ssid', request.name);
       ssid = {
         name: request.name,
         lastSeen: request.lastSeen,
@@ -94,6 +94,17 @@ function handleJSON(json) {
       };
       nodes.push(ssid);
       ssids[ssid.name] = ssid;
+      let model = store.ssids.add(ssid, { merge: true });
+      var dbrequest = model.save();
+      if (dbrequest) {
+        dbrequest.then(function() {
+          //console.log('saved', ssid.name);
+        }).fail(function() {
+          //console.log('failed', ssid.name);
+        });
+      } else {
+        console.error(dbrequest);
+      }
     } else {
       if (ssid.lastSeen !== request.lastSeen
           || ssid.count !== request.count ) {
@@ -115,7 +126,7 @@ function handleJSON(json) {
     $.each(request.macs, function(address, count) {
       var mac = macs[address];
       if (!mac) {
-        console.log('adding mac', address);
+        //console.log('adding mac', address);
         mac = {
           address: address,
           count: count,
@@ -131,7 +142,7 @@ function handleJSON(json) {
         mac.count = count;
       }
       if (!ssid.macs[address]) {
-        console.log('adding link', mac.address, ssid.name);
+        //console.log('adding link', mac.address, ssid.name);
         links.push({ source: mac, target: ssid, addedAt: Date.now() });
       }
       ssid.macs[address] = count;
@@ -141,7 +152,9 @@ function handleJSON(json) {
   simulation.nodes(nodes);
   simulation.force("link").links(links);
 
-  var line = g.selectAll(".line").data(links);
+  var line = g.selectAll(".line").data(links, function(d) {
+    return d.source.address + d.target.name;
+  });
   var lineEnter = line.enter().append("line").attr("class", "line")
     .attr("x1", function(d) { return d.source.x })
     .attr("y1", function(d) { return d.source.y })
@@ -149,7 +162,9 @@ function handleJSON(json) {
     .attr("y2", function(d) { return d.target.y })
     .style("stroke", "rgb(6,120,155)");
 
-  var mac = g.selectAll(".mac").data(d3.values(macs));
+  var mac = g.selectAll(".mac").data(d3.values(macs), function(d) {
+    return d ? d.address : this.id;
+  });
   var macEnter = mac.enter().append("g").attr("class", "mac");
   var macInner = macEnter.append("g").attr("transform", "translate(-" + rectWidth/2 + ",-" + rectWidth/2 + ")");
   macInner.append("svg:rect")
@@ -181,7 +196,9 @@ function handleJSON(json) {
       return color;
     });
 
-  var ssid = g.selectAll(".ssid").data(d3.values(ssids));
+  var ssid = g.selectAll(".ssid").data(d3.values(ssids), function(d) {
+    return d ? d.name : this.id;
+  });
   var ssidEnter = ssid.enter().append("g").attr("class", "ssid");
   //CIRCLE
   ssidEnter.append("svg:circle")
@@ -202,6 +219,10 @@ function handleJSON(json) {
     .attr("opacity", function(d) {
       return Math.max(0.5, 1 - (maxLastSeen - d.lastSeen) * 0.00001);
     });
+
+  ssid.exit().remove();
+  line.exit().remove();
+  mac.exit().remove();
 
   mac = macEnter.merge(mac);
   ssid = ssidEnter.merge(ssid);
@@ -258,8 +279,10 @@ body.keydown(function(e) {
 });
 
 
-poll('probereq.json');
-//test('probereq.json');
+store.ssids.fetch().then(function() {
+  poll('probereq-test.json');
+  //test('probereq.json');
+});
 
 function poll(url) {
   $.getJSON(url, function(json) {
